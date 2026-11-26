@@ -1,0 +1,38 @@
+AUTO LEGENDAS - extensao para After Effects
+============================================
+
+INSTALAR
+1. Extraia o zip.
+2. Clique com o botao direito em instalar.bat > Executar como administrador.
+   (Ele copia a pasta AutoLegendas para a pasta CEP da Adobe e libera
+   extensoes sem assinatura.)
+3. Feche o After Effects e abra de novo.
+4. Menu Window > Extensions > Auto Legendas.
+
+Instalacao manual: copie a pasta AutoLegendas para
+   C:\Program Files (x86)\Common Files\Adobe\CEP\extensions\
+e rode, no terminal:
+   reg add "HKCU\Software\Adobe\CSXS.12" /v PlayerDebugMode /t REG_SZ /d 1 /f
+   reg add "HKCU\Software\Adobe\CSXS.13" /v PlayerDebugMode /t REG_SZ /d 1 /f
+
+PRIMEIRO USO (uma vez so)
+1. Instale o Python em python.org (marque "Add python.exe to PATH").
+2. No painel, clique em "Instalar dependencias (1a vez)".
+3. Na primeira transcricao o modelo e baixado (small = cerca de 500 MB).
+
+USAR
+1. Selecione na timeline a camada com a fala: video, audio ou PRE-COMP
+   (funciona ate com pre-comp dentro de pre-comp; o painel usa o audio de
+   maior duracao la dentro e mostra qual em "Detalhes").
+2. Ajuste o estilo e clique em "Gerar legendas".
+   Visual padrao: texto branco + contorno preto grosso arredondado + Drop Shadow.
+   Botao "Aplicar visual" volta a esse estilo. Escolha uma fonte pesada
+   (ex.: Proxima Nova ExtraBold/Black) na lista de fontes.
+- Nao usa API nem internet (so para baixar o modelo na 1a vez).
+- Com musica alta: desmarque "Filtrar silencio" e use o modelo medium.
+
+ATUALIZAR (v1.9)
+Feche o After Effects, rode instalar.bat e procure "Auto Legendas v1.9" no fim do painel.
+Se voce ja tinha instalado: rode instalar.bat de novo (ele sobrescreve), feche e abra o After Effects.
+Se aparecer erro do "av": clique em "Instalar dependencias" no painel.
+Se o Python 3.15 der erro na instalacao, use o Python 3.12 e escreva "py -3.12" no campo Python.

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auto Legendas</title>
+<style>
+  :root {
+    /* as cores abaixo sao trocadas pelas do After Effects ao abrir o painel (main.js > applyTheme) */
+    --bg: #232323; --fg: #e0e0e0; --muted: #9a9a9a; --card: #2b2b2b; --field: #171717;
+    --line: #3b3b3b; --thumb: #555; --accent: #3b8cff; --accent2: #2a6fe0;
+    --ok: #46c27a; --err: #ff6b5e; --r: 8px;
+    --maxh: clamp(110px, 30vh, 250px);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
+    font: 12px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+  #app { display: flex; flex-direction: column; height: 100%; min-width: 0; }
+
+  /* ---------- cabecalho fixo ---------- */
+  .top { flex: none; padding: 10px 12px 8px; border-bottom: 1px solid var(--line); background: var(--bg);
+    position: relative; z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .logo { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: #fff;
+    font-weight: 700; font-size: 12px; background: linear-gradient(135deg, var(--accent), #8a5cff); }
+  .brand b { font-size: 13px; }
+  .ver { margin-left: auto; color: var(--muted); font-size: 10.5px; }
+  button { font: inherit; color: inherit; }
+  button.primary { width: 100%; height: 38px; border: 0; border-radius: 9px; font-weight: 600; font-size: 13px;
+    color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: linear-gradient(180deg, var(--accent), var(--accent2));
+    box-shadow: 0 1px 0 rgba(255,255,255,.18) inset, 0 4px 14px -6px var(--accent); }
+  button.primary:hover { filter: brightness(1.08); }
+  button.primary:disabled { filter: saturate(.35) brightness(.85); cursor: default; }
+  .spinner { display: none; width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; animation: spin .8s linear infinite; }
+  body.busy .spinner { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress { height: 2px; margin-top: 8px; overflow: hidden; border-radius: 2px; }
+  .progress i { display: block; height: 100%; width: 35%; border-radius: 2px; background: var(--accent); opacity: 0; }
+  body.busy .progress i { opacity: 1; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+  .status { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--card);
+    border: 1px solid var(--line); white-space: pre-wrap; word-break: break-word; font-size: 11.5px;
+    max-height: 30vh; overflow: auto; }
+  .status.ok { border-color: rgba(70,194,122,.6); background: rgba(70,194,122,.10); }
+  .status.err { border-color: rgba(255,107,94,.65); background: rgba(255,107,94,.10); color: var(--err); }
+  .status.work { border-color: rgba(59,140,255,.6); background: rgba(59,140,255,.10); }
+
+  /* ---------- area rolavel ---------- */
+  main { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 10px 12px 16px; }
+  main::-webkit-scrollbar, .menu::-webkit-scrollbar, .status::-webkit-scrollbar, pre::-webkit-scrollbar { width: 10px; height: 10px; }
+  main::-webkit-scrollbar-track, .menu::-webkit-scrollbar-track, .status::-webkit-scrollbar-track,
+  pre::-webkit-scrollbar-track { background: transparent; }
+  main::-webkit-scrollbar-thumb, .menu::-webkit-scrollbar-thumb, .status::-webkit-scrollbar-thumb,
+  pre::-webkit-scrollbar-thumb { background: var(--thumb); border: 3px solid transparent;
+    background-clip: padding-box; border-radius: 8px; }
+  main::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+
+  /* uma coluna quando estreito, varias quando largo */
+  .cards { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .col { flex: 1 1 270px; min-width: 0; display: grid; gap: 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+  .card > summary, .card > .hd { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px; font-weight: 600; font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--muted); user-select: none; }
+  .card > .hd { cursor: default; }
+  .card > summary::-webkit-details-marker { display: none; }
+  .card > summary::before { content: ""; width: 6px; height: 6px; border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+  .card[open] > summary::before { transform: rotate(45deg); }
+  .card > summary:hover { color: var(--fg); }
+  .meta { margin-left: auto; font-weight: 400; letter-spacing: 0; text-transform: none; font-size: 11px; }
+  .body { padding: 2px 12px 12px; display: grid; gap: 10px; }
+
+  /* ---------- campos ---------- */
+  .f { display: grid; grid-template-columns: minmax(84px, 38%) minmax(0, 1fr); gap: 4px 10px; align-items: center; min-width: 0; }
+  .f.stack { grid-template-columns: minmax(0, 1fr); }
+  .f > label, .f > .lbl { color: var(--muted); font-size: 11.5px; line-height: 1.25; }
+  @media (max-width: 300px) { .f { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 280px) { .meta { display: none; } }
+  .row2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .hint, .note { color: var(--muted); font-size: 11px; line-height: 1.35; margin: 0; }
+  .only-chunks { display: none; }
+  body[data-mode="chunks"] .only-chunks { display: grid; }
+  body[data-mode="chunks"] .only-phrase { display: none; }
+  .only-stroke, .only-shadow, .only-box { display: none; }
+  body[data-stroke="on"] .only-stroke, body[data-shadow="on"] .only-shadow,
+  body[data-box="on"] .only-box { display: grid; }
+
+  input[type=text], input[type=number], select { width: 100%; min-width: 0; height: 28px; padding: 0 8px;
+    background: var(--field); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  input[type=text]:focus, input[type=number]:focus, select:focus { outline: none; border-color: var(--accent); }
+  select { -webkit-appearance: none; appearance: none; padding-right: 24px; background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.6' stroke-linecap='round'/></svg>"); }
+  select option { background: #222; color: #ddd; }
+  input[type=number] { -moz-appearance: textfield; text-align: center; padding: 0 4px; }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+  .rangebox { display: grid; grid-template-columns: minmax(0, 1fr) 54px; gap: 8px; align-items: center; min-width: 0; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; min-width: 0; height: 20px;
+    background: transparent; margin: 0; --p: 50%; }
+  input[type=range]:focus { outline: none; }
+  input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 4px;
+    background: linear-gradient(to right, var(--accent) var(--p), var(--line) var(--p)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; border: 2px solid var(--accent); margin-top: -5px; box-shadow: 0 1px 3px rgba(0,0,0,.45); }
+
+  input[type=color] { width: 36px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--field); cursor: pointer; flex: none; }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+  input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
+
+  .sw { display: inline-flex; align-items: center; cursor: pointer; position: relative; }
+  .sw input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .sw .track { flex: none; width: 32px; height: 18px; border-radius: 18px; background: var(--line);
+    position: relative; transition: background .15s; }
+  .sw .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+    border-radius: 50%; background: #fff; transition: transform .15s; }
+  .sw input:checked + .track { background: var(--accent); }
+  .sw input:checked + .track::after { transform: translateX(14px); }
+
+  .seg { display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; min-width: 0; background: var(--field);
+    border: 1px solid var(--line); border-radius: 7px; }
+  .seg button { flex: 1 1 auto; min-width: 0; height: 22px; padding: 0 8px; border: 0; border-radius: 5px;
+    background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .seg button:hover { color: var(--fg); }
+  .seg button.on { background: var(--accent); color: #fff; }
+
+  button.secondary { width: 100%; height: 28px; border-radius: 6px; cursor: pointer; background: transparent;
+    border: 1px solid var(--line); }
+  button.secondary:hover:not(:disabled) { border-color: var(--accent); }
+  button.secondary:disabled { opacity: .5; cursor: default; }
+  button.icon { margin-left: auto; width: 24px; height: 22px; padding: 0; border: 0; border-radius: 5px;
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
+  button.icon:hover { color: var(--fg); background: var(--field); }
+
+  /* ---------- seletor de fonte ---------- */
+  .picker { position: relative; min-width: 0; }
+  .picker input { padding-right: 30px; }
+  .picker .drop { position: absolute; right: 1px; top: 1px; width: 26px; height: 26px; border: 0;
+    background: transparent; color: var(--muted); cursor: pointer; }
+  .menu { position: absolute; left: 0; right: 0; top: 32px; z-index: 30; max-height: 230px; overflow-y: auto;
+    background: var(--field); border: 1px solid var(--accent); border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+  .menu[hidden] { display: none; }
+  .menu .item { padding: 5px 10px; cursor: pointer; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; font-size: 15px; line-height: 1.5; }
+  .menu .item:hover, .menu .item.on { background: var(--accent); color: #fff; }
+  .menu .note { padding: 6px 10px; }
+
+  /* ---------- pre-visualizacao ---------- */
+  .stagewrap { padding: 0 12px 12px; }
+  .stage { --ar: 1.7778; position: relative; margin: 0 auto; width: min(100%, calc(var(--maxh) * var(--ar)));
+    aspect-ratio: var(--ar); border-radius: 6px; overflow: hidden; border: 1px solid var(--line);
+    background: radial-gradient(120% 90% at 70% 15%, #4b5d7c 0, #222b3a 52%, #0c0f15 100%); }
+  .cap { position: absolute; left: 0; right: 0; text-align: center; transform: translateY(-50%); pointer-events: none; }
+  .capText { display: inline-block; white-space: pre; max-width: 100%; }
+  .capInner { display: inline-block; white-space: pre; }
+
+  pre { margin: 0; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    color: var(--muted); font: 11px/1.35 Consolas, monospace; }
+
+  @media (max-height: 520px) {
+    :root { --maxh: 96px; }
+    .top { padding: 8px 10px 6px; }
+    .brand { display: none; }
+    button.primary { height: 32px; }
+    .status { max-height: 22vh; margin-top: 6px; }
+  }
+</style>
+</head>
+<body data-mode="phrase">
+<div id="app">
+
+  <header class="top">
+    <div class="brand"><span class="logo">A</span><b>Auto Legendas</b><span class="ver">v1.9</span></div>
+    <button id="btnGenerate" class="primary"><span class="spinner"></span><span id="btnLabel">Gerar legendas</span></button>
+    <div class="progress"><i></i></div>
+    <div id="status" class="status">Selecione na timeline a camada com a fala (vídeo, áudio ou pre-comp) e clique em Gerar.</div>
+  </header>
+
+  <main>
+    <div class="cards">
+     <div class="col">
+
+      <!-- pre-visualizacao -->
+      <section class="card">
+        <div class="hd">Pré-visualização <span class="meta" id="compLabel"></span>
+          <button id="btnComp" class="icon" title="Atualizar com a composição aberta">&#8635;</button></div>
+        <div class="stagewrap">
+          <div class="stage" id="stage"><div class="cap" id="cap"><span class="capText" id="capText"><span class="capInner" id="capInner"></span></span></div></div>
+        </div>
+      </section>
+
+      <!-- frases -->
+      <details class="card" data-key="phrases" open>
+        <summary>Frases</summary>
+        <div class="body">
+          <div class="f stack"><span class="lbl">Como dividir</span>
+            <div class="seg" data-for="mode">
+              <button data-v="phrase">Frase inteira</button><button data-v="chunks">Blocos curtos</button></div>
+            <input type="hidden" id="mode" value="phrase"></div>
+          <p class="note" id="modeNote"></p>
+          <div class="f only-phrase"><span class="lbl">Linhas por legenda</span>
+            <div class="seg" data-for="maxLines">
+              <button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div>
+            <input type="hidden" id="maxLines" value="2"></div>
+          <div class="f"><label for="maxChars" id="lblChars">Caracteres por linha</label>
+            <div class="rangebox"><input type="range" id="maxChars" min="10" max="40" step="1" value="24">
+              <input type="number" data-for="maxChars"></div></div>
+          <div class="f only-chunks"><label for="maxWords">Palavras por bloco</label>
+            <div class="rangebox"><input type="range" id="maxWords" min="1" max="8" step="1" value="4">
+              <input type="number" data-for="maxWords"></div></div>
+          <div class="f"><label for="pause">Pausa entre frases (s)</label>
+            <div class="rangebox"><input type="range" id="pause" min="0.1" max="1.5" step="0.05" value="0.30">
+              <input type="number" data-for="pause"></div></div>
+          <div class="f stack"><span class="lbl">Pontuação</span>
+            <div class="seg" data-for="punct">
+              <button data-v="0">Manter</button><button data-v="1">Sem . ,</button><button data-v="2">Sem tudo</button></div>
+            <input type="hidden" id="punct" value="1"></div>
+        </div>
+      </details>
+
+     </div>
+     <div class="col">
+
+      <!-- estilo -->
+      <details class="card" data-key="style" open>
+        <summary>Estilo</summary>
+        <div class="body">
+          <button id="btnLook" class="secondary" title="Texto branco, contorno preto grosso e sombra (visual da referência)">Aplicar visual: contorno grosso + sombra</button>
+          <div class="f stack"><label for="font">Fonte</label>
+            <div>
+              <div class="picker">
+                <input type="text" id="font" value="Arial-BoldMT" autocomplete="off" spellcheck="false" placeholder="Clique para escolher...">
+                <button id="btnFontList" class="drop" title="Mostrar a lista de fontes">&#9662;</button>
+                <div id="fontMenu" class="menu" hidden></div>
+              </div>
+              <div class="hint" id="fontHint" style="margin-top:4px">Carregando fontes...</div>
+            </div></div>
+          <div class="f"><label for="size">Tamanho</label>
+            <div class="rangebox"><input type="range" id="size" min="20" max="220" step="1" value="70">
+              <input type="number" data-for="size"></div></div>
+          <div class="f"><label for="color">Cor do texto</label>
+            <div class="row2"><input type="color" id="color" value="#ffffff"></div></div>
+          <div class="f"><label for="upper">Maiúsculas</label>
+            <div class="row2"><label class="sw"><input type="checkbox" id="upper"><span class="track"></span></label></div></div>
+          <div class="f"><label for="stroke">Contorno</label>
+            <div class="row2"><label class="sw"><input type="checkbox" id="stroke" checked><span class="track"></span></label>
+              <input type="color" id="strokeColor" value="#000000"></div></div>
+          <div class="f only-stroke"><label for="strokeW">Espessura do contorno</label>
+            <div class="rangebox"><input type="range" id="strokeW" min="2" max="40" step="1" value="20">
+              <input type="number" data-for="strokeW"></div></div>
+          <div class="f"><label for="shadow">Sombra (drop shadow)</label>
+            <div class="row2"><label class="sw"><input type="checkbox" id="shadow" checked><span class="track"></span></label>
+              <input type="color" id="shadowColor" value="#000000"></div></div>
+          <div class="f only-shadow"><label for="shadowOp">Opacidade da sombra</label>
+            <div class="rangebox"><input type="range" id="shadowOp" min="0" max="100" step="1" value="100">
+              <input type="number" data-for="shadowOp"></div></div>
+          <div class="f only-shadow"><label for="shadowDist">Distância da sombra</label>
+            <div class="rangebox"><input type="range" id="shadowDist" min="0" max="40" step="1" value="12">
+              <input type="number" data-for="shadowDist"></div></div>
+          <div class="f only-shadow"><label for="shadowSoft">Suavidade da sombra</label>
+            <div class="rangebox"><input type="range" id="shadowSoft" min="0" max="30" step="1" value="0">
+              <input type="number" data-for="shadowSoft"></div></div>
+          <div class="f only-shadow"><label for="shadowAngle">Ângulo da sombra</label>
+            <div class="rangebox"><input type="range" id="shadowAngle" min="0" max="360" step="5" value="135">
+              <input type="number" data-for="shadowAngle"></div></div>
+          <div class="f"><label for="box">Caixa de fundo</label>
+            <div class="row2"><label class="sw"><input type="checkbox" id="box"><span class="track"></span></label>
+              <input type="color" id="boxColor" value="#000000"></div></div>
+          <div class="f only-box"><label for="boxOpacity">Opacidade da caixa</label>
+            <div class="rangebox"><input type="range" id="boxOpacity" min="0" max="100" step="1" value="60">
+              <input type="number" data-for="boxOpacity"></div></div>
+          <div class="f"><label for="posY">Posição vertical (%)</label>
+            <div class="rangebox"><input type="range" id="posY" min="0" max="100" step="1" value="50">
+              <input type="number" data-for="posY"></div></div>
+          <div class="f stack"><span class="lbl">Animação</span>
+            <div class="seg" data-for="anim">
+              <button data-v="0">Nenhuma</button><button data-v="1">Fade</button><button data-v="2">Pop</button><button data-v="3">Slide</button></div>
+            <input type="hidden" id="anim" value="2"></div>
+        </div>
+      </details>
+
+      <!-- transcricao -->
+      <details class="card" data-key="whisper">
+        <summary>Transcrição</summary>
+        <div class="body">
+          <div class="f"><label for="model">Modelo</label>
+            <select id="model">
+              <option value="tiny">tiny (muito rápido)</option>
+              <option value="base">base</option>
+              <option value="small" selected>small (recomendado)</option>
+              <option value="medium">medium (mais preciso)</option>
+              <option value="large-v3">large-v3 (melhor, lento)</option>
+            </select></div>
+          <div class="f"><label for="lang">Idioma</label>
+            <select id="lang">
+              <option value="auto" selected>Automático</option>
+              <option value="en">English</option>
+              <option value="pt">Português</option>
+              <option value="es">Español</option>
+            </select></div>
+          <div class="f"><label for="device">Processador</label>
+            <select id="device">
+              <option value="cpu" selected>CPU (mais seguro)</option>
+              <option value="auto">Automático (placa de vídeo se funcionar)</option>
+            </select></div>
+          <div class="f"><label for="vad">Filtrar silêncio</label>
+            <div class="row2"><label class="sw"><input type="checkbox" id="vad" checked><span class="track"></span></label>
+              <span class="hint">desligue com música alta</span></div></div>
+          <div class="f"><label for="python">Python</label>
+            <input type="text" id="python" value="python" spellcheck="false"></div>
+          <button id="btnInstall" class="secondary">Instalar dependências (1ª vez)</button>
+        </div>
+      </details>
+
+      <details class="card" data-key="log" id="cardLog">
+        <summary>Detalhes</summary>
+        <div class="body"><pre id="log">Nada por aqui ainda.</pre></div>
+      </details>
+
+     </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/CSInterface.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
