@@ -48,6 +48,6 @@ exit /b 1
 echo.
 echo Pronto! Abra o After Effects.
 echo Menu Window ^> Extensions ^> Auto Legendas
-echo No fim do painel deve aparecer: Auto Legendas v1.9
+echo No fim do painel deve aparecer: Auto Legendas v2.0
 echo.
 pause

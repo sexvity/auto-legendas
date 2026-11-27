@@ -266,10 +266,50 @@ function AL_addShadow(layer, o) {
     }
 }
 
+// ---------- bloco branco com o tamanho exato do texto ----------
+// r = retangulo do texto (sourceRectAtTime); (ax, ay) = ancora; (px, py) = posicao na composicao
+function AL_addBlock(comp, tl, r, ax, ay, px, py, t0, t1, o, label) {
+    var pad = (o.stroke ? Math.max(1, o.size * o.strokeW / 100) / 2 : 0) + 1;
+    var w = r.width + pad * 2;
+    var h = r.height + pad * 2;
+    var cx = px + (r.left + r.width / 2 - ax);
+    var cy = py + (r.top + r.height / 2 - ay);
+    var bk = comp.layers.addShape();
+    bk.name = "Bloco: " + label;
+    var grp = bk.property("ADBE Root Vectors Group").addProperty("ADBE Vector Group");
+    var gc = grp.property("ADBE Vectors Group");
+    var rc = gc.addProperty("ADBE Vector Shape - Rect");
+    rc.property("ADBE Vector Rect Size").setValue([w, h]);
+    rc.property("ADBE Vector Rect Roundness").setValue(0);
+    var fl = gc.addProperty("ADBE Vector Graphic - Fill");
+    fl.property("ADBE Vector Fill Color").setValue(o.blockColor);
+    var btr = bk.property("ADBE Transform Group");
+    btr.property("ADBE Anchor Point").setValue([0, 0]);
+    btr.property("ADBE Position").setValue([cx, cy]);
+    bk.startTime = t0;
+    bk.inPoint = t0;
+    bk.outPoint = t1;
+    bk.moveBefore(tl);   // por cima do texto
+}
+
+// chance do bloco aparecer numa legenda: x = 0 (inicio) ... 1 (fim) do video
+// dist: 0 uniforme, 1 mais no comeco, 2 mais no meio, 3 mais no fim
+function AL_blockChance(o, x) {
+    var w = 1;
+    if (o.blockDist === 1) {
+        w = 2 * (1 - x);
+    } else if (o.blockDist === 2) {
+        w = 2 * (1 - Math.abs(2 * x - 1));
+    } else if (o.blockDist === 3) {
+        w = 2 * x;
+    }
+    return Math.min(1, (o.blockChance / 100) * w);
+}
+
 // ---------- 4) cria uma legenda ----------
 // a, b: tempo do arquivo -> tempo da composicao ativa (T = a + b * s)
 // devolve 0 (pulada), 1 (criada) ou 2 (criada, mas a sombra nao foi aplicada)
-function AL_createCaption(comp, cap, o, a, b) {
+function AL_createCaption(comp, cap, o, a, b, withBlock) {
     var tStart = a + cap.s * b;
     var tEnd = Math.min(a + cap.e * b, comp.duration);
     if (tStart < 0) {
@@ -322,8 +362,14 @@ function AL_createCaption(comp, cap, o, a, b) {
     sp.setValue(doc);
 
     // tempo
+    // bloco branco: aparece primeiro, o texto entra quando ele some
+    var bd = 0;
+    if (withBlock) {
+        bd = Math.min(Math.max(o.blockMs, 20) / 1000, (tEnd - tStart) * 0.4);
+    }
+    var tText = tStart + bd;
     tl.startTime = tStart;
-    tl.inPoint = tStart;
+    tl.inPoint = tText;
     tl.outPoint = tEnd;
 
     // centralizacao: X pelo centro do texto, Y FIXO (virgula/g/p nao mexem na altura)
@@ -355,9 +401,13 @@ function AL_createCaption(comp, cap, o, a, b) {
         btr.property("ADBE Position").setValue([px, py]);
         btr.property("ADBE Opacity").setValue(o.boxOpacity);
         bl.startTime = tStart;
-        bl.inPoint = tStart;
+        bl.inPoint = tText;
         bl.outPoint = tEnd;
         bl.moveAfter(tl); // caixa fica embaixo do texto
+    }
+
+    if (withBlock && bd > 0) {
+        AL_addBlock(comp, tl, r, ax, ay, px, py, tStart, tText, o, oneLine);
     }
 
     AL_animateIn(tl, o.anim, [px, py]);
@@ -411,11 +461,17 @@ function AL_create(tsvPath, o, a, b) {
         opened = true;
         var feitas = 0;
         var semSombra = 0;
-        var c, res;
+        var blocos = 0;
+        var c, res, x, com;
         for (c = 0; c < caps.length; c++) {
-            res = AL_createCaption(comp, caps[c], o, a, b);
+            x = caps.length > 1 ? c / (caps.length - 1) : 0;
+            com = !!o.block && Math.random() < AL_blockChance(o, x);
+            res = AL_createCaption(comp, caps[c], o, a, b, com);
             if (res > 0) {
                 feitas++;
+                if (com) {
+                    blocos++;
+                }
             }
             if (res === 2) {
                 semSombra++;
@@ -423,7 +479,7 @@ function AL_create(tsvPath, o, a, b) {
         }
         app.endUndoGroup();
         opened = false;
-        return "OK|" + feitas + "|" + semSombra;
+        return "OK|" + feitas + "|" + semSombra + "|" + blocos;
     } catch (e) {
         if (opened) {
             try { app.endUndoGroup(); } catch (x) {}

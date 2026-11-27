@@ -31,8 +31,19 @@ USAR
 - Nao usa API nem internet (so para baixar o modelo na 1a vez).
 - Com musica alta: desmarque "Filtrar silencio" e use o modelo medium.
 
-ATUALIZAR (v1.9)
-Feche o After Effects, rode instalar.bat e procure "Auto Legendas v1.9" no fim do painel.
+NOVIDADES v2.0
+- Bloco branco antes do texto (Estilo > "Bloco branco antes do texto"): um retangulo do
+  tamanho exato do texto aparece e some, e so entao o texto entra. Escolha a chance (%),
+  onde aparece mais (igual no video todo / comeco / meio / final) e a duracao em ms.
+  Chance 100% + "Igual no video todo" = em todas as legendas.
+- Traducao automatica offline (Transcricao > "Traduzir legenda para"): audio em
+  espanhol, italiano, ingles ou portugues -> legenda em qualquer um deles, sem API.
+  Cada frase e traduzida inteira e continua inteira na legenda.
+  Precisa clicar em "Instalar dependencias" (instala o argostranslate) e de internet
+  so na 1a vez de cada idioma (baixa um pacote pequeno de traducao).
+
+ATUALIZAR (v2.0)
+Feche o After Effects, rode instalar.bat e procure "Auto Legendas v2.0" no fim do painel.
 Se voce ja tinha instalado: rode instalar.bat de novo (ele sobrescreve), feche e abra o After Effects.
 Se aparecer erro do "av": clique em "Instalar dependencias" no painel.
 Se o Python 3.15 der erro na instalacao, use o Python 3.12 e escreva "py -3.12" no campo Python.

@@ -85,9 +85,9 @@
   .only-chunks { display: none; }
   body[data-mode="chunks"] .only-chunks { display: grid; }
   body[data-mode="chunks"] .only-phrase { display: none; }
-  .only-stroke, .only-shadow, .only-box { display: none; }
+  .only-stroke, .only-shadow, .only-box, .only-block { display: none; }
   body[data-stroke="on"] .only-stroke, body[data-shadow="on"] .only-shadow,
-  body[data-box="on"] .only-box { display: grid; }
+  body[data-box="on"] .only-box, body[data-block="on"] .only-block { display: grid; }
 
   input[type=text], input[type=number], select { width: 100%; min-width: 0; height: 28px; padding: 0 8px;
     background: var(--field); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
@@ -177,7 +177,7 @@
 <div id="app">
 
   <header class="top">
-    <div class="brand"><span class="logo">A</span><b>Auto Legendas</b><span class="ver">v1.9</span></div>
+    <div class="brand"><span class="logo">A</span><b>Auto Legendas</b><span class="ver">v2.0</span></div>
     <button id="btnGenerate" class="primary"><span class="spinner"></span><span id="btnLabel">Gerar legendas</span></button>
     <div class="progress"><i></i></div>
     <div id="status" class="status">Selecione na timeline a camada com a fala (vídeo, áudio ou pre-comp) e clique em Gerar.</div>
@@ -283,6 +283,24 @@
             <div class="seg" data-for="anim">
               <button data-v="0">Nenhuma</button><button data-v="1">Fade</button><button data-v="2">Pop</button><button data-v="3">Slide</button></div>
             <input type="hidden" id="anim" value="2"></div>
+          <div class="f"><label for="block">Bloco branco antes do texto</label>
+            <div class="row2"><label class="sw"><input type="checkbox" id="block"><span class="track"></span></label>
+              <input type="color" id="blockColor" value="#ffffff"></div></div>
+          <div class="f only-block"><label for="blockChance">Chance de aparecer (%)</label>
+            <div class="rangebox"><input type="range" id="blockChance" min="0" max="100" step="5" value="60">
+              <input type="number" data-for="blockChance"></div></div>
+          <div class="f only-block"><label for="blockDist">Aparece mais</label>
+            <select id="blockDist">
+              <option value="0" selected>Igual no vídeo todo</option>
+              <option value="1">Mais no começo</option>
+              <option value="2">Mais no meio</option>
+              <option value="3">Mais no final</option>
+            </select></div>
+          <div class="f only-block"><label for="blockMs">Duração do bloco (ms)</label>
+            <div class="rangebox"><input type="range" id="blockMs" min="40" max="400" step="10" value="120">
+              <input type="number" data-for="blockMs"></div></div>
+          <div class="f stack only-block"><span class="hint">O bloco cobre o texto no tamanho exato e some; aí o texto entra.
+            Com chance 100% e "Igual no vídeo todo" aparece em todas.</span></div>
         </div>
       </details>
 
@@ -304,7 +322,18 @@
               <option value="en">English</option>
               <option value="pt">Português</option>
               <option value="es">Español</option>
+              <option value="it">Italiano</option>
             </select></div>
+          <div class="f"><label for="target">Traduzir legenda para</label>
+            <select id="target">
+              <option value="" selected>Sem tradução</option>
+              <option value="pt">Português</option>
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="it">Italiano</option>
+            </select></div>
+          <div class="f stack"><span class="hint">Tradução offline (sem API). Na 1ª vez de cada idioma baixa um pacote pequeno
+            e precisa de internet. Clique em "Instalar dependências" antes.</span></div>
           <div class="f"><label for="device">Processador</label>
             <select id="device">
               <option value="cpu" selected>CPU (mais seguro)</option>

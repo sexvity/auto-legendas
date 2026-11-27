@@ -108,6 +108,9 @@ def phrase_groups(words, pause=0.45, comma_pause=0.20, cap_pause=0.12):
             cut = True
         elif w.get('seg') != nxt.get('seg'):
             cut = True
+        elif w.get('syn') and nxt.get('syn'):
+            # palavras de uma traducao nao tem pausas reais: so o fim de frase corta
+            cut = _ends_with(w['word'], HARD_END)
         elif _ends_with(w['word'], HARD_END):
             cut = True
         elif nxt['start'] - w['end'] >= pause:
@@ -267,6 +270,80 @@ def build_timeline(caps, lead=0.05, tail=0.15, fill_gap=0.45, min_dur=0.30):
     return out
 
 
+LANG_OK = ('pt', 'en', 'es', 'it')
+
+
+def _argos():
+    import argostranslate.package as pkg
+    import argostranslate.translate as tr
+    return pkg, tr
+
+
+def _has_pair(tr, a, b):
+    try:
+        langs = {l.code: l for l in tr.get_installed_languages()}
+        if a not in langs or b not in langs:
+            return False
+        return langs[a].get_translation(langs[b]) is not None
+    except Exception:
+        return False
+
+
+def _install_pair(pkg, a, b):
+    for p in pkg.get_available_packages():
+        if p.from_code == a and p.to_code == b:
+            print('Baixando pacote de traducao %s -> %s (so na 1a vez)...' % (a, b))
+            pkg.install_from_path(p.download())
+            return True
+    return False
+
+
+def prepare_translation(src, dst):
+    """Garante que o pacote src->dst (direto ou passando pelo ingles) esta instalado."""
+    pkg, tr = _argos()
+    if _has_pair(tr, src, dst):
+        return tr
+    try:
+        pkg.update_package_index()
+        if not (_install_pair(pkg, src, dst) and _has_pair(tr, src, dst)):
+            if src != 'en':
+                _install_pair(pkg, src, 'en')
+            if dst != 'en':
+                _install_pair(pkg, 'en', dst)
+    except Exception as e:
+        print('ERRO: nao consegui baixar o pacote de traducao (%s).' % e)
+        print('      Na primeira vez para cada idioma e preciso internet.')
+        sys.exit(4)
+    if not _has_pair(tr, src, dst):
+        print('ERRO: o pacote de traducao %s -> %s nao esta disponivel.' % (src, dst))
+        sys.exit(4)
+    return tr
+
+
+def translate_groups(groups, tr, src, dst):
+    """Traduz cada FRASE inteira e espalha as palavras traduzidas no tempo da frase original.
+    A frase continua inteira (uma frase nunca se mistura com a seguinte)."""
+    out = []
+    for gi, g in enumerate(groups):
+        original = _join(g)
+        try:
+            text = (tr.translate(original, src, dst) or '').strip()
+        except Exception as e:
+            print('Aviso: nao consegui traduzir "%s" (%s); mantive o original.' % (original[:40], e))
+            text = original
+        toks = text.split() or original.split()
+        t0, t1 = g[0]['start'], g[-1]['end']
+        weights = [len(re.sub(r'\W', '', tk)) + 1 for tk in toks]
+        total = float(sum(weights))
+        acc = 0.0
+        for tk, wt in zip(toks, weights):
+            s0 = t0 + (t1 - t0) * acc / total
+            acc += wt
+            s1 = t0 + (t1 - t0) * acc / total
+            out.append({'word': tk, 'start': s0, 'end': s1, 'seg': gi, 'syn': True})
+    return out
+
+
 def patch_av():
     """av 19+ removeu metadata_errors/metadata_encoding de av.open, mas o faster-whisper
     ainda os envia. Se o av recusar esses argumentos, repete a chamada sem eles."""
@@ -329,6 +406,7 @@ def main():
     ap.add_argument('--vad', action='store_true')
     ap.add_argument('--punct', type=int, default=0)
     ap.add_argument('--device', default='cpu', choices=['cpu', 'auto'])
+    ap.add_argument('--target', default='', help='idioma da legenda (pt, en, es, it); vazio = sem traducao')
     args = ap.parse_args()
 
     try:
@@ -347,6 +425,20 @@ def main():
     patch_av()
     add_nvidia_dlls()
 
+    target = args.target if args.target in LANG_OK else ''
+    whisper_translates = False
+    if target:
+        try:
+            _argos()
+        except ImportError:
+            if target == 'en':
+                print('Aviso: argostranslate nao esta instalado; usando a traducao do proprio Whisper (so ingles).')
+                whisper_translates = True
+            else:
+                print('ERRO: para traduzir para este idioma falta o argostranslate.')
+                print('      Clique em "Instalar dependencias" no painel e tente de novo.')
+                sys.exit(2)
+
     kwargs = dict(
         word_timestamps=True,
         condition_on_previous_text=False,
@@ -358,6 +450,8 @@ def main():
     )
     if args.lang != 'auto':
         kwargs['language'] = args.lang
+    if whisper_translates:
+        kwargs['task'] = 'translate'
 
     ranged = args.end > args.start
     if args.vad:
@@ -420,6 +514,17 @@ def main():
         print('       Se tem fala antes disso: desmarque "Filtrar silencio", escolha o idioma')
         print('       em vez de "auto" e use o modelo medium. Se o audio escolhido nao era o certo,')
         print('       selecione na timeline a camada exata da fala.')
+    src_lang = args.lang if args.lang != 'auto' else getattr(info, 'language', None)
+    if target and not whisper_translates and src_lang and src_lang != target:
+        print('Traduzindo %s -> %s ...' % (src_lang, target))
+        tr = prepare_translation(src_lang, target)
+        words = translate_groups(phrase_groups(words, args.pause, args.comma_pause, args.cap_pause),
+                                 tr, src_lang, target)
+        print('Traducao pronta.')
+    elif whisper_translates:
+        print('Legenda traduzida para ingles pelo proprio Whisper.')
+    elif target:
+        print('Legenda no idioma do audio (%s); nada a traduzir.' % (src_lang or '?'))
     caps = build_captions(words, args.mode, args.max_words, args.max_chars, args.max_lines,
                           args.pause, args.comma_pause, args.cap_pause)
     items = build_timeline(caps)

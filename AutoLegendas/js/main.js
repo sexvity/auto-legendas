@@ -20,7 +20,7 @@
     var FIELDS = ['model', 'lang', 'device', 'vad', 'python', 'mode', 'maxLines', 'maxWords', 'maxChars',
         'pause', 'punct', 'font', 'size', 'color', 'upper', 'stroke', 'strokeColor', 'strokeW',
         'shadow', 'shadowColor', 'shadowOp', 'shadowDist', 'shadowSoft', 'shadowAngle', 'box', 'boxColor',
-        'boxOpacity', 'posY', 'anim'];
+        'boxOpacity', 'posY', 'anim', 'target', 'block', 'blockColor', 'blockChance', 'blockDist', 'blockMs'];
     var busy = false;
     var busyPrefix = '';
     var statusKind = '';
@@ -485,6 +485,7 @@
         document.body.setAttribute('data-stroke', getVal('stroke') ? 'on' : 'off');
         document.body.setAttribute('data-shadow', getVal('shadow') ? 'on' : 'off');
         document.body.setAttribute('data-box', getVal('box') ? 'on' : 'off');
+        document.body.setAttribute('data-block', getVal('block') ? 'on' : 'off');
         $('lblChars').textContent = chunks ? 'Caracteres por bloco' : 'Caracteres por linha';
         var lines = parseInt(getVal('maxLines'), 10) || 2;
         $('modeNote').textContent = chunks
@@ -557,7 +558,7 @@
         syncNumbers();
         onChange();
     }
-    // na primeira vez que a v1.9 abre, ja aplica o visual (so uma vez; depois vale o que voce escolher)
+    // na primeira vez que a v2.0 abre, ja aplica o visual (so uma vez; depois vale o que voce escolher)
     function migrateLook() {
         try {
             if (!localStorage.getItem('autolegendas.look18')) {
@@ -587,7 +588,12 @@
             boxColor: hexToRgb(getVal('boxColor')),
             boxOpacity: num('boxOpacity', 60),
             posY: num('posY', 50),
-            anim: parseInt(getVal('anim'), 10) || 0
+            anim: parseInt(getVal('anim'), 10) || 0,
+            block: getVal('block'),
+            blockColor: hexToRgb(getVal('blockColor')),
+            blockChance: clampInt(num('blockChance', 60), 0, 100),
+            blockDist: clampInt(parseInt(getVal('blockDist'), 10) || 0, 0, 3),
+            blockMs: clampInt(num('blockMs', 120), 20, 1000)
         };
     }
 
@@ -642,7 +648,8 @@
                 '--max-chars', String(clampInt(num('maxChars', 24), 8, 60)),
                 '--pause', String(Math.max(0.05, num('pause', 0.30))),
                 '--punct', String(parseInt(getVal('punct'), 10) || 0),
-                '--device', getVal('device') === 'auto' ? 'auto' : 'cpu'];
+                '--device', getVal('device') === 'auto' ? 'auto' : 'cpu',
+                '--target', String(getVal('target') || '')];
             if (getVal('vad')) { args.push('--vad'); }
             setStatus('Transcrevendo... o After Effects continua livre para usar.', 'work');
             return runPython(args, appendLog);
@@ -663,13 +670,15 @@
             }
             var n = parseInt(p[1], 10) || 0;
             var noShadow = parseInt(p[2], 10) || 0;
+            var nBlocks = parseInt(p[3], 10) || 0;
             if (n === 0) {
                 setStatus('Nenhuma legenda foi criada. A composição pode ser mais curta que a fala.', 'err');
             } else if (noShadow > 0) {
                 setStatus(n + ' legendas criadas, mas a sombra não foi aplicada em ' + noShadow +
                     ' (o efeito Drop Shadow não respondeu). Aplique o efeito nelas manualmente.', 'err');
             } else {
-                setStatus('✓ ' + n + (n === 1 ? ' legenda criada.' : ' legendas criadas.'), 'ok');
+                setStatus('✓ ' + n + (n === 1 ? ' legenda criada.' : ' legendas criadas.') +
+                    (getVal('block') ? ' Bloco branco em ' + nBlocks + '.' : ''), 'ok');
             }
         }).catch(function (e) {
             setStatus(friendly(e), 'err');
@@ -700,7 +709,13 @@
             '    pass',
             "print('Python %s, av %s, faster-whisper %s' % (sys.version.split()[0], av.__version__, getattr(faster_whisper, '__version__', '?')))"
         ].join('\n');
-        runPython(['-m', 'pip', 'install', '--upgrade', 'faster-whisper', 'av>=14,<19'], appendLog).then(function (res) {
+        var noTr = false;
+        runPython(['-m', 'pip', 'install', '--upgrade', 'faster-whisper', 'av>=14,<19', 'argostranslate'], appendLog).then(function (res) {
+            if (res.code === 0) { return res; }
+            noTr = true;
+            appendLog('\nNão consegui instalar o tradutor (argostranslate). Instalando só o essencial...\n');
+            return runPython(['-m', 'pip', 'install', '--upgrade', 'faster-whisper', 'av>=14,<19'], appendLog);
+        }).then(function (res) {
             if (res.code !== 0) {
                 setStatus(lastLines(res.out) || 'A instalação falhou.', 'err');
                 return null;
@@ -708,7 +723,8 @@
             setStatus('Conferindo a instalação...', 'work');
             return runPython(['-c', check], null).then(function (chk) {
                 if (chk.code === 0) {
-                    setStatus('✓ Instalado e conferido: ' + lastLines(chk.out) + '. Já pode gerar legendas.', 'ok');
+                    setStatus('✓ Instalado e conferido: ' + lastLines(chk.out) + '. Já pode gerar legendas.' +
+                        (noTr ? ' (A tradução não foi instalada: só o inglês funciona sem ela.)' : ''), noTr ? 'err' : 'ok');
                 } else {
                     setStatus('A instalação terminou, mas não funciona:\n' + lastLines(chk.out), 'err');
                 }
